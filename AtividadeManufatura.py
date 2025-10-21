@@ -19,25 +19,34 @@ if up_file is not None:
     df = pd.read_csv(up_file)
     st.success("Dados Carregados com Sucesso")
     
-    edited_df = st.data_editor(df, num_rows = "dynamic")
+    edited_df = st.data_editor(df, num_rows = "dynamic", hide_index = False)
+    
+    for index, row in edited_df.iterrows():
+        if row["Peças Totais"] != row["Peças Ruins"] + row["Peças Boas"]:
+            st.error(f"⚠️Valor de Peças Incorreta em Posição: {index} Maquina: {row['Maquina']}")
     
     # Transformar DataFrame em csv para poder ser baixado
     edit_df_csv = edited_df.to_csv(index=False).encode("utf-8")
     st.download_button("Baixar Data", data = edit_df_csv, file_name = "Dados Editados.csv")
     
-    # Agrupar por Data e Máquina: peças boas, totais e as ruins
-    maq_sum = edited_df.groupby(["Data", "Maquina"])[["Peças Boas", "Peças Totais", "Peças Ruins"]].sum().reset_index()
     
+    # Agrupar por Data: Peças Boas, Peças Totais, Peças Ruins
+    data_sum = edited_df.groupby(["Data"])[["Peças Boas", "Peças Totais", "Peças Ruins"]].sum().reset_index()
     # Codigo para eficiencia diaria (separado por data)
-    maq_sum["Eficiência (%)"] = np.round((maq_sum["Peças Boas"] / maq_sum["Peças Totais"]) * 100, 2)
+    data_sum["Eficiência (%)"] = np.round((data_sum["Peças Boas"] / data_sum["Peças Totais"]) * 100, 2)
+    
+    # Agrupar por Data e Maquina: Peças Totais (Uso: alertas)
+    maq_sum = edited_df.groupby(["Data","Maquina"])[["Peças Totais"]].sum().reset_index()
+    maq_sum["Eficiência (em %)"] = data_sum["Eficiência (%)"]
+    
 
     # Tabela de eficiencia diaria
     st.subheader("Eficiência Diária")
-    st.dataframe(maq_sum[["Data", "Eficiência (%)"]], hide_index=True)
+    st.dataframe(data_sum[["Data", "Eficiência (%)"]], hide_index=True)
     
     # # Codigo para media diaria por maquina (separado por maquina)
-    med = maq_sum.groupby("Maquina")[["Peças Totais"]].sum().reset_index()
-    days = maq_sum["Data"].nunique()
+    med = edited_df.groupby("Maquina")[["Peças Totais"]].sum().reset_index()
+    days = data_sum["Data"].nunique()
     med["Média Diária (Peças)"] = np.round(med["Peças Totais"] / days, 2)
 
     # Tabela de media por maquina
@@ -48,18 +57,19 @@ if up_file is not None:
 
     
     # Codigo para taxa de defeitos
-    maq_sum["Taxa de Defeitos (em %)"] = (maq_sum["Peças Ruins"]/edited_df["Peças Totais"]) * 100
+    data_sum["Taxa de Defeitos (em %)"] = np.round((data_sum["Peças Ruins"]/data_sum["Peças Totais"]) * 100, 2)
          
     # Grafico de taxa de defeitos em %
     st.subheader("Gráfico da Taxa de Defeito Diária (em %)")         
-    error_rate_graph = st.area_chart(data = maq_sum, x = "Data", y = "Taxa de Defeitos (em %)",
+    error_rate_graph = st.area_chart(data = data_sum, x = "Data", y = "Taxa de Defeitos (em %)",
                                     color = ["#FFE529"])
     
     # Grafico de producao diaria
     st.subheader("Gráfico da Produção Diária")
-    dayprod_graph = st.bar_chart(data = edited_df, 
+    dayprod_graph = st.bar_chart(data = data_sum, 
                                  x = "Data", y = "Peças Totais",
                                  color = ["#751B96"])
+
 
 
     st.markdown("---")
@@ -111,13 +121,14 @@ if up_file is not None:
         
     # Codigo dos alertas de erros 
     st.subheader("Alertas Automáticos")
+    
 
-    for index, row in maq_sum.iterrows():
-        if row["Eficiência (%)"] < 90:
-            st.error(f"⚠️ Eficiência baixa em {row['Data']} ({row['Maquina']}): {row['Eficiência (%)']}%")
-
-        if row["Peças Totais"] < 80:
-            st.error(f"⚠️ Produção abaixo do mínimo em {row['Data']} ({row['Maquina']}): {row['Peças Totais']} peças")
+    for column, row in maq_sum.iterrows():
+            if row["Eficiência (em %)"] < 90:
+                st.error(f"⚠️ Eficiência baixa em {row['Data']}: {row['Eficiência (em %)']}%")
+                
+            if row["Peças Totais"] < 80:
+                st.error(f"⚠️ Produção abaixo do mínimo em {row['Data']} ({row['Maquina']}): {row['Peças Totais']} peças")
 
 
 else:
